@@ -28,7 +28,7 @@ def main():
             if line == "END IONS":
                 raise ValueError('No Scan Numbers')
 
-    with mgf.read(args.library) as reader:
+    with mgf.read(args.library, index_by_scans=True) as reader:
         for spectrum in reader:
             # We will use the spectrum ID as the key for the dictionary
             spectrum_id = spectrum['params'].get('spectrumid', spectrum['params'].get('title', "No ID"))
