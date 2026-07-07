@@ -2,12 +2,30 @@
 
 import requests
 import json
+import time
+
+# Default number of attempts for network GETs. Set attempts=1 to disable retrying.
+DEFAULT_ATTEMPTS = 4
+
+def get(url, attempts=DEFAULT_ATTEMPTS, **kwargs):
+    """Drop-in for requests.get() that retries with exponential backoff on transient
+    network errors (connection failures and timeouts).
+
+    attempts is the total number of tries (attempts=1 means a single try, no retry).
+    Remaining keyword args (timeout, params, ...) are passed through to requests.get().
+    """
+    for i in range(attempts - 1):
+        try:
+            return requests.get(url, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            time.sleep(min(2 ** i, 10))   # backoff 1s, 2s, 4s ... capped at 10s
+    return requests.get(url, **kwargs)   # final attempt: let any error propagate
 
 #Returns the library spectra as a list
 def pulldown_library(library_name):
     SERVER_URL = "http://gnps.ucsd.edu/ProteoSAFe/LibraryServlet?library="
     target_url = SERVER_URL + library_name
-    r = requests.get(target_url)
+    r = get(target_url)
     json_text = r.text
     spectra_object = json.loads(json_text)
 
@@ -24,18 +42,18 @@ def pulldown_all_continuous_libraries():
     return library_spectra
 
 #returns specturm
-def get_library_spectrum(spectrum_id):
+def get_library_spectrum(spectrum_id, attempts=DEFAULT_ATTEMPTS):
     try:
         # First try the cache
         SERVER_URL = "https://external.gnps2.org/gnpsspectrum?SpectrumID="
         url = SERVER_URL + spectrum_id
-        r = requests.get(url, timeout=10)
+        r = get(url, timeout=10, attempts=attempts)
         r.raise_for_status()
         return r.json()
     except:
         SERVER_URL = "http://gnps.ucsd.edu/ProteoSAFe/SpectrumCommentServlet?SpectrumID="
         url = SERVER_URL + spectrum_id
-        r = requests.get(url)
+        r = get(url, attempts=attempts)
         return r.json()
 
 
@@ -44,7 +62,7 @@ def get_all_datasets(gnps_only=False):
     SERVER_URL = "http://gnps.ucsd.edu/ProteoSAFe/datasets_json.jsp"
 
     url = SERVER_URL
-    r = requests.get(url)
+    r = get(url)
     json_object = json.loads(r.text)
 
     if gnps_only == True:
@@ -58,7 +76,7 @@ def get_continuous_id_jobs(dataset_task):
     SERVER_URL = "http://gnps.ucsd.edu/ProteoSAFe/ContinuousIDServlet?task="
 
     url = SERVER_URL + dataset_task
-    r = requests.get(url)
+    r = get(url)
     json_object = json.loads(r.text)
 
     return json_object["jobs"]
@@ -71,7 +89,7 @@ def get_dataset_current_continuous_identifications(dataset_task):
 
     if most_recent_job["workflowname"] == "MOLECULAR-CONTINUOUS-ID":
         identifications_url = "https://gnps.ucsd.edu/ProteoSAFe/result_json.jsp?task=%s&view=group_by_spectrum_all_beta" % (most_recent_job["task"])
-        dataset_identifications = requests.get(identifications_url).json()["blockData"]
+        dataset_identifications = get(identifications_url).json()["blockData"]
 
         for identification in dataset_identifications:
             identification["task"] = most_recent_job["task"]
@@ -88,7 +106,7 @@ def get_dataset_current_continuous_pairs(dataset_task):
 
     if most_recent_job["workflowname"] == "MOLECULAR-CONTINUOUS-ID":
         pairs_url = "https://gnps.ucsd.edu/ProteoSAFe/result_json.jsp?task=%s&view=clusters_network_pairs" % (most_recent_job["task"])
-        dataset_pairs = requests.get(pairs_url).json()["blockData"]
+        dataset_pairs = get(pairs_url).json()["blockData"]
 
         return dataset_pairs
 
@@ -102,7 +120,7 @@ def get_dataset_current_continuous_clustersummary(dataset_task):
 
     if most_recent_job["workflowname"] == "MOLECULAR-CONTINUOUS-ID":
         data_url = "https://gnps.ucsd.edu/ProteoSAFe/result_json.jsp?task=%s&view=view_all_clusters_withID" % (most_recent_job["task"])
-        data_list = requests.get(data_url).json()["blockData"]
+        data_list = get(data_url).json()["blockData"]
 
         return data_list
 
@@ -187,6 +205,6 @@ def subscribe_dataset(dataset_task, username, password):
 
 def get_molecule_explorer_dataset_data():
     url = "https://gnps.ucsd.edu/ProteoSAFe/result_json.jsp?task=698fc5a09db74c7492983b3673ff5bf6&view=molecule_explorer_v2_summary&show=true"
-    r = requests.get(url)
+    r = get(url)
 
     return r.json()["blockData"]
